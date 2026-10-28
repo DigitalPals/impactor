@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Settings for the signer process.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SignerOptions {
     /// Custom app name override.
     pub custom_name: Option<String>,
@@ -65,7 +67,8 @@ impl SignerOptions {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SignerFeatures {
     pub support_minimum_os_version: bool,
     pub support_file_sharing: bool,
@@ -78,12 +81,13 @@ pub struct SignerFeatures {
 }
 
 /// Embedding options.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SignerEmbedding {
     pub single_profile: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SignerInstallMode {
     Install,
     Export,
@@ -104,7 +108,7 @@ impl std::fmt::Display for SignerInstallMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SignerMode {
     Pem,
     Adhoc,
@@ -152,7 +156,7 @@ impl SignerAppReal {
 }
 
 /// Supported app types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SignerApp {
     Default,
     Antrag,

@@ -19,6 +19,8 @@ image.workspace = true
 goblin.workspace = true
 zip.workspace = true
 flate2.workspace = true
+serde.workspace = true
+tempfile = "3"
 plume_core = { path = "../plume_core", features = ["tweaks"] }
 plume_store = { path = "../plume_store" }
 decompress = { path = "../../3rdparty/decompress" }

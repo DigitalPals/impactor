@@ -1,0 +1,65 @@
+{
+  "name": "YouMod",
+  "identifier": "publisher.metadata.collision",
+  "apiVersion": "v2",
+  "subtitle": "Automated YouMod IPA builds",
+  "description": "AltStore/Feather/SideStore/LiveContainer source for YouMod. No ads, background playback, downloads, SponsorBlock, PiP, and more.",
+  "iconURL": "https://images.example.test/youmod.png",
+  "website": "https://github.com/mrdrvt99/Altstore-Repository",
+  "sourceURL": "https://raw.githubusercontent.com/mrdrvt99/Altstore-Repository/main/youmod.json",
+  "apps": [
+    {
+      "name": "YouMod",
+      "bundleIdentifier": "com.google.ios.youtube",
+      "developerName": "Tonwalter888",
+      "subtitle": "YouMod",
+      "category": "photo-video",
+      "version": "1.2.0",
+      "versionDate": "2025-01-02",
+      "versionDescription": "Sanitized legacy notes",
+      "downloadURL": "https://downloads.example.test/legacy?id=youmod",
+      "size": 131824994,
+      "localizedDescription": "YouMod mod. Includes no ads, background playback, downloads, iSponsorBlock, PiP, and more.",
+      "iconURL": "https://images.example.test/youmod.png",
+      "tintColor": "FF0000",
+      "screenshotURLs": [],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.security.application-groups",
+          "com.apple.developer.associated-domains",
+          "com.apple.developer.coremedia.allow-alternate-video-decoder-selection",
+          "com.apple.developer.declared-age-range",
+          "com.apple.developer.storekit.request-data",
+          "com.apple.developer.device-information.user-assigned-device-name",
+          "com.apple.developer.group-session",
+          "keychain-access-groups",
+          "com.apple.developer.networking.multicast",
+          "aps-environment",
+          "com.apple.developer.siri",
+          "com.apple.developer.networking.wifi-info"
+        ],
+        "privacy": {
+          "NSCameraUsageDescription": "Used to record and upload videos to YouTube.",
+          "NSMicrophoneUsageDescription": "Used to record audio for videos.",
+          "NSPhotoLibraryUsageDescription": "Used to upload photos and videos from your library.",
+          "NSPhotoLibraryAddUsageDescription": "Used to save videos to your photo library.",
+          "NSAppleMusicUsageDescription": "Allows access to Apple Music for background playback and media features.",
+          "NSBluetoothPeripheralUsageDescription": "Used for connecting to Bluetooth devices.",
+          "NSLocalNetworkUsageDescription": "Used to discover and connect to devices on your local network."
+        }
+      },
+      "versions": [
+        {
+          "version": "1.3.0",
+          "date": "2025-02-03",
+          "localizedDescription": "Sanitized release notes",
+          "downloadURL": "https://downloads.example.test/artifact?id=youmod",
+          "size": 1024,
+          "minOSVersion": "17.0",
+          "buildVersion": "42"
+        }
+      ]
+    }
+  ],
+  "news": []
+}

@@ -12,4 +12,5 @@ tokio.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile = "3"
 plume_core = { path = "../plume_core", features = ["tweaks"] }

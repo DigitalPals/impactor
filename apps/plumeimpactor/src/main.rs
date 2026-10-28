@@ -14,6 +14,7 @@ mod macos_app;
 mod refresh;
 mod relaunch;
 mod screen;
+mod source_install;
 mod startup;
 mod subscriptions;
 mod tray;

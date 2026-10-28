@@ -40,6 +40,11 @@ Some distributions (like Bazzite) may need you to run `sudo update-crypto-polici
 
 ## Download
 
+This fork also includes a local Sources browser for AltStore Classic/SideStore
+IPA feeds, with release history and explicit updates through the existing
+installer. See [Sources and Linux development](../docs/sources.md) for setup,
+supported formats, identity/update rules, and tests.
+
 Visit [releases](https://github.com/claration/impactor/releases) and get the latest version for your computer.
 
 ###### *This is also available on flathub & homebrew.*

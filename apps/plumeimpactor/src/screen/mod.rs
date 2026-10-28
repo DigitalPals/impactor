@@ -1,17 +1,19 @@
 pub(crate) mod general;
+mod keyboard_control;
 mod package;
 mod progress;
 pub(crate) mod settings;
+mod sources;
 mod utilties;
 mod windows;
 
 use std::collections::VecDeque;
 
 use iced::Length::Fill;
-use iced::widget::operation::{focus_next,focus_previous};
-use iced::widget::{button, column, container, pick_list, row, stack, text};
 use iced::event::{self, Event, Status};
 use iced::keyboard::{self, Key, key};
+use iced::widget::operation::{focus_next, focus_previous};
+use iced::widget::{button, column, container, pick_list, row, stack, text};
 use iced::window;
 use iced::{Element, Subscription, Task};
 
@@ -37,7 +39,9 @@ pub enum Message {
     NavigateToScreen(ImpactorScreenType),
     NextScreen,
     PreviousScreen,
-    TabPressed { shift: bool },
+    TabPressed {
+        shift: bool,
+    },
 
     // Device management
     ComboBoxSelected(String),
@@ -74,6 +78,7 @@ pub enum Message {
 
     // Screen-specific messages
     MainScreen(general::Message),
+    SourcesScreen(sources::Message),
     UtilitiesScreen(utilties::Message),
     SettingsScreen(settings::Message),
     InstallerScreen(package::Message),
@@ -99,11 +104,13 @@ pub struct Impactor {
     pending_installation: bool,
     certificate_reset_queue: VecDeque<crate::certificate_reset::ConfirmationRequest>,
     selected_locale: Option<String>,
+    sources: sources::SourcesScreen,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ImpactorScreenType {
     Main,
+    Sources,
     Utilities,
     Settings,
     Installer,
@@ -112,6 +119,7 @@ pub enum ImpactorScreenType {
 
 enum ImpactorScreen {
     Main(general::GeneralScreen),
+    Sources,
     Utilities(utilties::UtilitiesScreen),
     Settings(settings::SettingsScreen),
     Installer(package::PackageScreen),
@@ -121,6 +129,7 @@ enum ImpactorScreen {
 impl Impactor {
     pub fn new() -> (Self, Task<Message>) {
         let mut tray = ImpactorTray::new();
+        let (sources, sources_task) = sources::SourcesScreen::new();
         let store = Self::init_account_store_sync();
         tray.update_refresh_apps(&store);
         let selected_locale = store.locale().map(str::to_string);
@@ -151,8 +160,9 @@ impl Impactor {
                 pending_installation: false,
                 certificate_reset_queue: VecDeque::new(),
                 selected_locale,
+                sources,
             },
-            open_task,
+            Task::batch([open_task, sources_task.map(Message::SourcesScreen)]),
         )
     }
 
@@ -195,7 +205,7 @@ impl Impactor {
                     )));
                 }
 
-                Task::none()
+                self.source_target_task()
             }
             Message::DeviceConnected(device) => {
                 if !self.devices.iter().any(|d| d.device_id == device.device_id) {
@@ -225,7 +235,7 @@ impl Impactor {
                     )));
                 }
 
-                Task::none()
+                self.source_target_task()
             }
             Message::DeviceDisconnected(id) => {
                 let udid = self
@@ -259,9 +269,12 @@ impl Impactor {
                     )));
                 }
 
-                Task::none()
+                self.source_target_task()
             }
             Message::NavigateToScreen(screen_type) => {
+                if matches!(&self.current_screen,ImpactorScreen::Progress(p) if p.is_installing) {
+                    return Task::none();
+                }
                 if screen_type == ImpactorScreenType::Settings {
                     if !matches!(self.current_screen, ImpactorScreen::Progress(_)) {
                         self.previous_screen = Some(Box::new(std::mem::replace(
@@ -272,6 +285,9 @@ impl Impactor {
                 }
 
                 self.navigate_to_screen(screen_type.clone());
+                if screen_type == ImpactorScreenType::Sources {
+                    return self.source_target_task();
+                }
 
                 if screen_type == ImpactorScreenType::Utilities {
                     let rppairing_enabled = match &self.current_screen {
@@ -296,6 +312,7 @@ impl Impactor {
             Message::NextScreen => {
                 let next_screen = match self.current_screen {
                     ImpactorScreen::Main(_) => ImpactorScreenType::Installer,
+                    ImpactorScreen::Sources => return Task::none(),
                     ImpactorScreen::Utilities(_) => return Task::none(),
                     ImpactorScreen::Installer(_) => ImpactorScreenType::Progress,
                     ImpactorScreen::Settings(_) => return Task::none(),
@@ -307,6 +324,10 @@ impl Impactor {
             }
             Message::PreviousScreen => match &self.current_screen {
                 ImpactorScreen::Main(_) => Task::none(),
+                ImpactorScreen::Sources => {
+                    self.navigate_to_screen(ImpactorScreenType::Main);
+                    Task::none()
+                }
                 ImpactorScreen::Utilities(_) => {
                     self.navigate_to_screen(ImpactorScreenType::Main);
                     Task::none()
@@ -415,10 +436,7 @@ impl Impactor {
                     Task::none()
                 }
             }
-            Message::Quit => {
-                self.tray.take();
-                std::process::exit(0);
-            }
+            Message::Quit => self.sources.shutdown().map(Message::SourcesScreen),
             Message::LoginWindowMessage(id, msg) => {
                 if let Some(login_window) = self.login_windows.get_mut(&id) {
                     let task = login_window.update(msg.clone());
@@ -449,12 +467,79 @@ impl Impactor {
                             }
                         }
 
-                        return window::close(id);
+                        return Task::batch([window::close(id), self.source_target_task()]);
                     }
 
                     task.map(move |msg| Message::LoginWindowMessage(id, msg))
                 } else {
                     Task::none()
+                }
+            }
+            Message::SourcesScreen(msg) => {
+                if let sources::Message::Shutdown(result) = msg {
+                    if let Err(error) = result {
+                        return self
+                            .sources
+                            .update(sources::Message::Saved(Err(error)))
+                            .map(Message::SourcesScreen);
+                    }
+                    self.tray.take();
+                    std::process::exit(0);
+                } else if let sources::Message::OpenInstaller(package, context) = msg {
+                    if context
+                        .scope_check(
+                            self.selected_device.as_ref(),
+                            self.account_store
+                                .as_ref()
+                                .and_then(|s| s.selected_account()),
+                        )
+                        .is_err()
+                        || matches!(&self.current_screen,ImpactorScreen::Progress(p) if p.is_installing)
+                    {
+                        std::thread::spawn(move || package.remove_package_stage());
+                        return Task::none();
+                    }
+                    if !self
+                        .sources
+                        .store
+                        .source(&context.source_key)
+                        .is_some_and(|s| s.enabled)
+                    {
+                        std::thread::spawn(move || package.remove_package_stage());
+                        return Task::none();
+                    }
+                    let mut options = match context.options(&package) {
+                        Ok(options) => options,
+                        Err(error) => {
+                            std::thread::spawn(move || package.remove_package_stage());
+                            return self
+                                .sources
+                                .update(sources::Message::Saved(Err(error)))
+                                .map(Message::SourcesScreen);
+                        }
+                    };
+                    if context.previous.is_none() {
+                        if let Some(account) = self
+                            .account_store
+                            .as_ref()
+                            .and_then(|s| s.selected_account())
+                        {
+                            if !account.team_id().is_empty() {
+                                options.custom_identifier = Some(format!(
+                                    "{}.s{}.{}",
+                                    context.original_bundle_id,
+                                    &context.source_key[..8],
+                                    account.team_id()
+                                ));
+                            }
+                        }
+                    }
+                    let mut installer = package::PackageScreen::new(Some(package), options);
+                    installer.source = Some(context);
+                    self.current_screen = ImpactorScreen::Installer(installer);
+                    Task::none()
+                } else {
+                    self.sources.update(msg).map(Message::SourcesScreen)
                 }
             }
             Message::MainScreen(msg) => {
@@ -509,7 +594,7 @@ impl Impactor {
                                     let _ = store.account_select_sync(email);
                                 }
                             }
-                            Task::none()
+                            self.source_target_task()
                         }
                         settings::Message::RemoveAccount(index) => {
                             if let Some(store) = &mut self.account_store {
@@ -519,7 +604,7 @@ impl Impactor {
                                     let _ = store.accounts_remove_sync(email);
                                 }
                             }
-                            Task::none()
+                            self.source_target_task()
                         }
                         settings::Message::ExportP12 => {
                             if let Some(account) = self
@@ -594,7 +679,10 @@ impl Impactor {
                                     self.account_store = Some(Self::init_account_store_sync());
                                 }
                             }
-                            screen.update(msg).map(Message::SettingsScreen)
+                            Task::batch([
+                                screen.update(msg).map(Message::SettingsScreen),
+                                self.source_target_task(),
+                            ])
                         }
                         settings::Message::SelectLocale(choice) => {
                             self.selected_locale = choice.clone();
@@ -656,8 +744,22 @@ impl Impactor {
                     match msg {
                         progress::Message::Back => Task::done(Message::PreviousScreen),
                         progress::Message::InstallationFinished => {
-                            Task::done(Message::UpdateTrayMenu)
+                            let task = screen
+                                .update(progress::Message::InstallationFinished)
+                                .map(Message::ProgressScreen);
+                            Task::batch([
+                                task,
+                                Task::done(Message::UpdateTrayMenu),
+                                Task::done(Message::SourcesScreen(
+                                    sources::Message::ReloadInstalls,
+                                )),
+                            ])
                         }
+                        progress::Message::InstallationProgress(_, -1)
+                        | progress::Message::InstallationError(_) => Task::batch([
+                            screen.update(msg).map(Message::ProgressScreen),
+                            Task::done(Message::SourcesScreen(sources::Message::ReloadInstalls)),
+                        ]),
                         _ => screen.update(msg).map(Message::ProgressScreen),
                     }
                 } else {
@@ -831,9 +933,37 @@ impl Impactor {
                     ..
                 }),
                 Status::Ignored,
-            ) => Some(Message::TabPressed { shift: modifiers.shift() }),
+            ) => Some(Message::TabPressed {
+                shift: modifiers.shift(),
+            }),
             _ => None,
         });
+
+        let source_keys = if matches!(self.current_screen, ImpactorScreen::Sources) {
+            event::listen_with(|event, status, _| {
+                let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event
+                else {
+                    return None;
+                };
+                let action = match key.as_ref() {
+                    Key::Character("l") if modifiers.command() => sources::Message::FocusUrl,
+                    Key::Character("f") if modifiers.command() => sources::Message::FocusSearch,
+                    Key::Named(key::Named::PageDown) if status == Status::Ignored => {
+                        sources::Message::Scroll(320.0)
+                    }
+                    Key::Named(key::Named::PageUp) if status == Status::Ignored => {
+                        sources::Message::Scroll(-320.0)
+                    }
+                    Key::Named(key::Named::Escape) if status == Status::Ignored => {
+                        sources::Message::Back
+                    }
+                    _ => return None,
+                };
+                Some(Message::SourcesScreen(action))
+            })
+        } else {
+            Subscription::none()
+        };
 
         let tray_menu_refresh_subscription = subscriptions::tray_menu_refresh_subscription();
         let certificate_reset_subscription = subscriptions::certificate_reset_subscription();
@@ -847,6 +977,7 @@ impl Impactor {
         });
 
         Subscription::batch(vec![
+            self.sources.subscription().map(Message::SourcesScreen),
             device_subscription,
             tray_subscription,
             hover_subscription,
@@ -856,6 +987,7 @@ impl Impactor {
             relaunch_subscription,
             close_subscription,
             tab_subscription,
+            source_keys,
         ])
     }
 
@@ -884,6 +1016,7 @@ impl Impactor {
     fn view_current_screen(&self, has_device: bool) -> Element<'_, Message> {
         match &self.current_screen {
             ImpactorScreen::Main(screen) => screen.view().map(Message::MainScreen),
+            ImpactorScreen::Sources => self.sources.view().map(Message::SourcesScreen),
             ImpactorScreen::Utilities(screen) => screen.view().map(Message::UtilitiesScreen),
             ImpactorScreen::Settings(screen) => screen
                 .view(&self.account_store, &self.selected_locale)
@@ -917,8 +1050,30 @@ impl Impactor {
                 .on_press(Message::NavigateToScreen(ImpactorScreenType::Settings))
         };
 
+        let navigation = if matches!(self.current_screen, ImpactorScreen::Sources) {
+            keyboard_control::button(text(rust_i18n::t!("import_ipa")))
+                .on_press(Message::NavigateToScreen(ImpactorScreenType::Main))
+                .style(appearance::s_button)
+        } else {
+            let count = self.sources.updates_count();
+            let label = if count > 0 {
+                format!("{} ({count})", rust_i18n::t!("sources_title"))
+            } else {
+                rust_i18n::t!("sources_title").to_string()
+            };
+            keyboard_control::button(text(label))
+                .on_press_maybe(
+                    (!matches!(
+                        self.current_screen,
+                        ImpactorScreen::Progress(_) | ImpactorScreen::Installer(_)
+                    ))
+                    .then_some(Message::NavigateToScreen(ImpactorScreenType::Sources)),
+                )
+                .style(appearance::s_button)
+        };
         container(
             row![
+                navigation,
                 container(text("")).width(Fill),
                 pick_list(
                     device_names,
@@ -1004,6 +1159,9 @@ impl Impactor {
                     self.selected_device.clone(),
                 ));
             }
+            ImpactorScreenType::Sources => {
+                self.current_screen = ImpactorScreen::Sources;
+            }
             ImpactorScreenType::Settings => {
                 self.current_screen = ImpactorScreen::Settings(settings::SettingsScreen::new());
             }
@@ -1024,6 +1182,45 @@ impl Impactor {
     }
 
     fn start_installation_task(&mut self) -> Task<Message> {
+        if let ImpactorScreen::Installer(installer) = &mut self.current_screen {
+            if let Some(context) = &installer.source {
+                if installer.options.install_mode == plume_utils::SignerInstallMode::Install
+                    && installer.options.mode != plume_utils::SignerMode::Pem
+                {
+                    installer.source_error=Some("Source installation requires Apple ID signing to preserve its tracked identity.".into());
+                    return Task::none();
+                }
+                if !self
+                    .sources
+                    .store
+                    .source(&context.source_key)
+                    .is_some_and(|s| s.enabled)
+                {
+                    installer.source_error = Some(
+                        "This source was removed or disabled. Return to Sources before installing."
+                            .into(),
+                    );
+                    return Task::none();
+                }
+                let account = self
+                    .account_store
+                    .as_ref()
+                    .and_then(|s| s.selected_account());
+                if let Err(error) = context.scope_check(self.selected_device.as_ref(), account) {
+                    installer.source_error = Some(error);
+                    return Task::none();
+                }
+                if context.previous.is_some()
+                    && (installer.options.mode != plume_utils::SignerMode::Pem
+                        || installer.options.install_mode
+                            != plume_utils::SignerInstallMode::Install)
+                {
+                    installer.source_error=Some("Source updates require Apple ID signing and Install mode to preserve the installed identity.".into());
+                    return Task::none();
+                }
+                installer.source_error = None;
+            }
+        }
         if let ImpactorScreen::Installer(installer) = &self.current_screen {
             let Some(package) = installer.selected_package.clone() else {
                 return Task::none();
@@ -1031,6 +1228,7 @@ impl Impactor {
 
             let device = self.selected_device.clone();
             let options = installer.options.clone();
+            let source = installer.source.clone();
             let account = self
                 .account_store
                 .as_ref()
@@ -1057,13 +1255,29 @@ impl Impactor {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 let tx_error = tx.clone();
                 rt.block_on(async move {
+                    // Every source retry signs a fresh extraction; a failed attempt's tweaks or
+                    // provisioning files cannot contaminate the next attempt.
+                    let attempt = if source.is_some() {
+                        match plume_utils::Package::new_without_artwork(
+                            package.package_file().clone(),
+                        ) {
+                            Ok(package) => Some(package),
+                            Err(error) => {
+                                let _ = tx_error.send((format!("IPA staging: {error}"), -1));
+                                return;
+                            }
+                        }
+                    } else {
+                        None
+                    };
                     match subscriptions::run_installation(
-                        &package,
+                        attempt.as_ref().unwrap_or(&package),
                         device.as_ref(),
                         &options,
                         account.as_ref(),
                         store.as_mut(),
                         &tx,
+                        source.as_ref(),
                     )
                     .await
                     {
@@ -1071,8 +1285,15 @@ impl Impactor {
                             let _ = tx.send(("Installation complete!".to_string(), 100));
                         }
                         Err(e) => {
-                            let _ = tx_error.send((format!("Error: {}", e), -1));
+                            let context = source
+                                .as_ref()
+                                .map(|s| format!("{}: ", s.describe()))
+                                .unwrap_or_default();
+                            let _ = tx_error.send((format!("{context}{e}"), -1));
                         }
+                    }
+                    if let Some(attempt) = attempt {
+                        attempt.remove_package_stage();
                     }
                 });
             });
@@ -1081,5 +1302,12 @@ impl Impactor {
         } else {
             Task::none()
         }
+    }
+
+    fn source_target_task(&self) -> Task<Message> {
+        Task::done(Message::SourcesScreen(sources::Message::Target(
+            self.selected_device.clone(),
+            sources::selected_account_key(self.account_store.as_ref()),
+        )))
     }
 }

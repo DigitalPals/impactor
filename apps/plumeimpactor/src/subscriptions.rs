@@ -256,7 +256,12 @@ pub(crate) fn installation_progress_listener(
                                 };
 
                                 if let Some((status, progress)) = message {
-                                    let _ = tx.unbounded_send((status, progress));
+                                    if tx.unbounded_send((status, progress)).is_err()
+                                        || progress == -1
+                                        || progress >= 100
+                                    {
+                                        break;
+                                    }
                                 }
 
                                 std::thread::sleep(std::time::Duration::from_millis(100));
@@ -281,12 +286,14 @@ pub(crate) async fn run_installation(
     account: Option<&plume_store::GsaAccount>,
     mut store: Option<&mut plume_store::AccountStore>,
     tx: &std::sync::mpsc::Sender<(String, i32)>,
+    source: Option<&crate::source_install::SourceInstall>,
 ) -> Result<(), String> {
     use plume_core::{AnisetteConfiguration, CertificateIdentity, developer::DeveloperSession};
     use plume_utils::{Signer, SignerInstallMode, SignerMode};
 
     let package_file: Bundle;
     let mut options = options.clone();
+    let mut installed_team = String::new();
     let send = |msg: String, progress: i32| {
         let _ = tx.send((msg, progress));
     };
@@ -308,9 +315,12 @@ pub(crate) async fn run_installation(
                     .set_configuration_path(crate::defaults::get_data_path()),
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Apple authentication: {e}"))?;
 
-            let teams_response = session.qh_list_teams().await.map_err(|e| e.to_string())?;
+            let teams_response = session
+                .qh_list_teams()
+                .await
+                .map_err(|e| format!("Apple account teams: {e}"))?;
 
             if teams_response.teams.is_empty() {
                 return Err("No teams available for this account".to_string());
@@ -330,6 +340,17 @@ pub(crate) async fn run_installation(
             } else {
                 team_id
             };
+            installed_team = team_id.clone();
+            if let Some(source) = source {
+                source
+                    .prepare(
+                        device.ok_or("Source installation requires a target device")?,
+                        account,
+                        team_id,
+                        &mut options,
+                    )
+                    .await?;
+            }
 
             let mut on_certificate_reset = || {
                 send(crate::certificate_reset::WARNING.to_string(), 20);
@@ -344,7 +365,7 @@ pub(crate) async fn run_installation(
                 Some(&mut on_certificate_reset),
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Apple certificate provisioning: {e}"))?;
 
             send("Ensuring device is registered...".to_string(), 30);
 
@@ -352,29 +373,31 @@ pub(crate) async fn run_installation(
                 session
                     .qh_ensure_device(team_id, &dev.name, &dev.udid)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| format!("Apple device registration: {e}"))?;
             }
 
             send("Extracting package...".to_string(), 50);
 
             let mut signer = Signer::new(Some(identity), options.clone());
 
-            let bundle = package.get_package_bundle().map_err(|e| e.to_string())?;
+            let bundle = package
+                .get_package_bundle()
+                .map_err(|e| format!("IPA extraction: {e}"))?;
 
             send("Signing package...".to_string(), 70);
 
             signer
                 .modify_bundle(&bundle, &Some(team_id.clone()))
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("Package modification: {e}"))?;
             signer
                 .register_bundle(&bundle, &session, team_id, false)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("Apple provisioning: {e}"))?;
             signer
                 .sign_bundle(&bundle)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("Signing: {e}"))?;
 
             options = signer.options.clone();
             package_file = bundle;
@@ -425,7 +448,7 @@ pub(crate) async fn run_installation(
                         })
                     })
                     .await
-                    .map_err(|e| format!("Install error: {}", e))?;
+                    .map_err(|e| format!("Device installation: {e}"))?;
 
                     if options.app.supports_pairing_file() {
                         if let (Some(custom_identifier), Some(pairing_file_bundle_path)) = (
@@ -477,7 +500,24 @@ pub(crate) async fn run_installation(
         }
     }
 
-    if options.refresh && options.mode == SignerMode::Pem {
+    if options.install_mode == SignerInstallMode::Install && options.mode == SignerMode::Pem {
+        if let (Some(source), Some(device), Some(account)) = (source, device, account) {
+            source.record_success(
+                device,
+                account,
+                &installed_team,
+                package_file
+                    .get_bundle_identifier()
+                    .ok_or("Installed package has no bundle identifier")?,
+                &options,
+            )?;
+        }
+    }
+
+    if options.refresh
+        && options.mode == SignerMode::Pem
+        && options.install_mode == SignerInstallMode::Install
+    {
         send("Saving for refresh...".to_string(), 75);
         let path = get_data_path().join("refresh_store");
         tokio::fs::create_dir_all(&path)
@@ -525,6 +565,8 @@ pub(crate) async fn run_installation(
                     let refresh_app = plume_store::RefreshApp {
                         name: package_file.get_name(),
                         bundle_id: package_file.get_bundle_identifier(),
+                        account_email: Some(account.email().clone()),
+                        team_id: Some(installed_team.clone()),
                         path: dest_path.clone(),
                         scheduled_refresh,
                     };

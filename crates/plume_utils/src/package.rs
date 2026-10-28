@@ -2,8 +2,7 @@ use super::{Bundle, PlistInfoTrait};
 use crate::{Error, SignerApp, SignerOptions, cgbi};
 use plist::Dictionary;
 use std::path::PathBuf;
-use std::{env, fs, io::Read};
-use uuid::Uuid;
+use std::{fs, io::Read};
 use zip::ZipArchive;
 use zip::write::FileOptions;
 
@@ -19,13 +18,19 @@ pub struct Package {
 
 impl Package {
     pub fn new(package_file: PathBuf) -> Result<Self, Error> {
-        let stage_dir = env::temp_dir().join(format!(
-            "plume_stage_{:08}",
-            Uuid::new_v4().to_string().to_uppercase()
-        ));
+        Self::stage(package_file, true)
+    }
+
+    /// Remote packages use separately bounded artwork. Never decode archive artwork on the UI thread.
+    pub fn new_without_artwork(package_file: PathBuf) -> Result<Self, Error> {
+        Self::stage(package_file, false)
+    }
+
+    fn stage(package_file: PathBuf, artwork: bool) -> Result<Self, Error> {
+        let stage = tempfile::Builder::new().prefix("plume_stage_").tempdir()?;
+        let stage_dir = stage.path().to_owned();
         let out_package_file = stage_dir.join("stage.ipa");
 
-        fs::create_dir_all(&stage_dir).ok();
         fs::copy(&package_file, &out_package_file)?;
 
         let file = fs::File::open(&out_package_file)?;
@@ -37,11 +42,18 @@ impl Package {
         let info_plist_dictionary =
             Self::get_info_plist_from_archive(&out_package_file, &archive_entries)?;
 
-        let app_icon_data = Self::extract_icon_from_archive(
-            &out_package_file,
-            &archive_entries,
-            &info_plist_dictionary,
-        );
+        let app_icon_data = if artwork {
+            Self::extract_icon_from_archive(
+                &out_package_file,
+                &archive_entries,
+                &info_plist_dictionary,
+            )
+        } else {
+            None
+        };
+
+        // Keep only completed stages. Every error above removes partial files automatically.
+        let _ = stage.keep();
 
         Ok(Self {
             package_file: out_package_file,
@@ -151,6 +163,9 @@ impl Package {
             for suffix in &suffixes {
                 let candidate = format!("{app_prefix}/{name}{suffix}");
                 if let Ok(mut entry) = archive.by_name(&candidate) {
+                    if entry.size() > 8 * 1024 * 1024 {
+                        continue;
+                    }
                     let mut data = Vec::new();
                     if entry.read_to_end(&mut data).is_ok() && !data.is_empty() {
                         return Some(cgbi::normalize(data));
