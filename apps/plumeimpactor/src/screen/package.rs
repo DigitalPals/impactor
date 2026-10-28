@@ -1,5 +1,5 @@
 use iced::widget::{
-    button, checkbox, column, container, image, pick_list, row, scrollable, stack, text, text_input,
+    checkbox, column, container, image, pick_list, row, scrollable, stack, text, text_input,
 };
 use iced::{Alignment, Center, Element, Fill, Task};
 use plume_utils::{Package, PlistInfoTrait, SignerInstallMode, SignerMode, SignerOptions};
@@ -7,6 +7,7 @@ use rust_i18n::t;
 use std::path::PathBuf;
 use tiny_skia::{FillRule, Mask, Path, PathBuilder, Transform};
 
+use super::keyboard_control::button;
 use crate::appearance;
 
 #[derive(Debug, Clone)]
@@ -49,6 +50,8 @@ pub enum SelectionKind {
 pub struct PackageScreen {
     pub selected_package: Option<Package>,
     pub options: SignerOptions,
+    pub source: Option<crate::source_install::SourceInstall>,
+    pub source_error: Option<String>,
     package_icon_handle: Option<image::Handle>,
     custom_icon_path: Option<PathBuf>,
     custom_icon_handle: Option<image::Handle>,
@@ -67,6 +70,8 @@ impl PackageScreen {
         Self {
             selected_package: package,
             options,
+            source: None,
+            source_error: None,
             package_icon_handle,
             custom_icon_path,
             custom_icon_handle,
@@ -263,13 +268,24 @@ impl PackageScreen {
             return self.view_no_package();
         };
 
-        let content = scrollable(
+        let source_status = column![
+            text(
+                self.source
+                    .as_ref()
+                    .map(|s| s.describe())
+                    .unwrap_or_default()
+            ),
+            text(self.source_error.as_deref().unwrap_or("")),
+        ]
+        .spacing(4);
+        let content = scrollable(column![
+            source_status,
             row![
                 self.view_package_info_column(pkg),
                 self.view_options_column()
             ]
             .spacing(appearance::THEME_PADDING),
-        );
+        ]);
 
         column![
             container(content).width(Fill).height(Fill),

@@ -3,9 +3,10 @@ use std::sync::{Arc, Mutex, mpsc};
 use iced::Element;
 use iced::Length::Fill;
 use iced::Task;
-use iced::widget::{button, column, container, row, text};
+use iced::widget::{column, container, row, text};
 use rust_i18n::t;
 
+use super::keyboard_control::button;
 use crate::appearance;
 
 type ProgressReceiver = Arc<Mutex<mpsc::Receiver<(String, i32)>>>;

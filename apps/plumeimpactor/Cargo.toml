@@ -22,8 +22,10 @@ tiny-skia = "0.11.4"
 plume_core = { path = "../../crates/plume_core", features = ["tweaks"] }
 plume_utils = { path = "../../crates/plume_utils" }
 plume_store = { path = "../../crates/plume_store" }
+plume_source = { path = "../../crates/plume_source" }
+serde_json.workspace = true
 
-iced = { version = "0.14", features = ["image-without-codecs", "advanced"] }
+iced = { version = "0.14", features = ["image-without-codecs", "advanced", "tokio"] }
 wgpu = { version = "27.0", default-features = false, features = ["std"] }     # Power references
 tray-icon = { version = "0.21", default-features = false }                    # System tray icon
 rfd = "0.16"                                                                  # File dialogs
@@ -44,3 +46,7 @@ winresource = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"                                                                    # System tray icon
+
+[dev-dependencies]
+tempfile = "3"
+zip.workspace = true

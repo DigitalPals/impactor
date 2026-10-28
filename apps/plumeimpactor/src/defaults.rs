@@ -39,7 +39,8 @@ pub(crate) fn default_window_settings() -> window::Settings {
         size: iced::Size::new(575.0, 475.0),
         position: window::Position::Centered,
         exit_on_close_request: false,
-        resizable: false,
+        resizable: true,
+        min_size: Some(iced::Size::new(575.0, 475.0)),
         icon: Some(load_window_icon()),
         platform_specific: platform_specific,
         ..Default::default()
@@ -61,9 +62,7 @@ pub fn get_data_path() -> PathBuf {
     let base = if cfg!(windows) {
         env::var("APPDATA").unwrap()
     } else {
-        env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
-            env::var("HOME").unwrap() + "/.config"
-        })
+        env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| env::var("HOME").unwrap() + "/.config")
     };
 
     let dir = Path::new(&base).join("PlumeImpactor");

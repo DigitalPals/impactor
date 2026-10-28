@@ -1,0 +1,56 @@
+{
+  "name": "YTMusicUltimate",
+  "identifier": "publisher.metadata.collision",
+  "apiVersion": "v2",
+  "subtitle": "Automated YTMusicUltimate IPA builds",
+  "description": "AltStore/SideStore/Feather source for YTMusicUltimate. No ads, background playback, and more.",
+  "iconURL": "https://images.example.test/ytmusic.png",
+  "website": "https://github.com/mrdrvt99/Altstore-Repository",
+  "sourceURL": "https://raw.githubusercontent.com/mrdrvt99/Altstore-Repository/main/ytmusic.json",
+  "apps": [
+    {
+      "name": "YTMusicUltimate",
+      "bundleIdentifier": "com.google.ios.youtubemusic",
+      "developerName": "dayanch96",
+      "subtitle": "YTMusicUltimate",
+      "category": "music",
+      "version": "1.2.0",
+      "versionDate": "2025-01-02",
+      "versionDescription": "Sanitized legacy notes",
+      "downloadURL": "https://downloads.example.test/legacy?id=ytmusic",
+      "size": 106337834,
+      "localizedDescription": "YTMusicUltimate mod. Includes no ads, background playback, and more.",
+      "iconURL": "https://images.example.test/ytmusic.png",
+      "tintColor": "FF0000",
+      "screenshotURLs": [],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.security.application-groups",
+          "com.apple.developer.associated-domains",
+          "com.apple.developer.coremedia.allow-alternate-video-decoder-selection",
+          "com.apple.developer.storekit.request-data",
+          "keychain-access-groups",
+          "com.apple.developer.networking.multicast",
+          "com.apple.developer.networking.wifi-info"
+        ],
+        "privacy": {
+          "NSAppleMusicUsageDescription": "Allows access to Apple Music for background playback and media features.",
+          "NSBluetoothPeripheralUsageDescription": "Used for connecting to Bluetooth headphones and audio devices.",
+          "NSLocalNetworkUsageDescription": "Used to discover and cast audio to devices on your local network."
+        }
+      },
+      "versions": [
+        {
+          "version": "1.3.0",
+          "date": "2025-02-03",
+          "localizedDescription": "Sanitized release notes",
+          "downloadURL": "https://downloads.example.test/artifact?id=ytmusic",
+          "size": 1024,
+          "minOSVersion": "17.0",
+          "buildVersion": "42"
+        }
+      ]
+    }
+  ],
+  "news": []
+}

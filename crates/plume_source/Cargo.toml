@@ -1,0 +1,26 @@
+[package]
+name = "plume_source"
+description = "Local AltStore Classic catalogs, downloads, and installation provenance."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono = { workspace = true, features = ["clock"] }
+thiserror.workspace = true
+sha2.workspace = true
+hex.workspace = true
+plist.workspace = true
+zip.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
+tokio = { workspace = true, features = ["fs", "io-util", "time", "sync", "macros"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+url = { version = "2", features = ["serde"] }
+percent-encoding = "2"
+json5 = "0.4"
+tempfile = "3"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net"] }

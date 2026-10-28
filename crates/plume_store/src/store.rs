@@ -51,14 +51,10 @@ impl AccountStore {
     }
 
     pub async fn save(&self) -> Result<(), Error> {
-        if let Some(path) = &self.path {
-            if let Some(parent) = path.parent() {
-                tokio::fs::create_dir_all(parent).await?;
-            }
-
-            tokio::fs::write(path, serde_json::to_string_pretty(self)?).await?;
-        }
-        Ok(())
+        let snapshot = self.clone();
+        tokio::task::spawn_blocking(move || snapshot.save_sync())
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()))?
     }
 
     pub fn save_sync(&self) -> Result<(), Error> {
@@ -67,7 +63,14 @@ impl AccountStore {
                 std::fs::create_dir_all(parent)?;
             }
 
-            std::fs::write(path, serde_json::to_string_pretty(self)?)?;
+            use std::io::Write;
+            let mut file = tempfile::NamedTempFile::new_in(
+                path.parent().unwrap_or(std::path::Path::new(".")),
+            )?;
+            serde_json::to_writer_pretty(&mut file, self)?;
+            file.flush()?;
+            file.as_file().sync_all()?;
+            file.persist(path).map_err(|e| e.error)?;
         }
         Ok(())
     }

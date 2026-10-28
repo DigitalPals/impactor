@@ -20,7 +20,18 @@ pub struct RefreshApp {
     pub name: Option<String>,
     #[serde(default)]
     pub bundle_id: Option<String>,
+    /// Per-app ownership; older records fall back to RefreshDevice.account.
+    #[serde(default)]
+    pub account_email: Option<String>,
+    #[serde(default)]
+    pub team_id: Option<String>,
     pub scheduled_refresh: DateTime<Utc>, // the scheduled refresh time will happen a day before expiration
+}
+
+impl RefreshApp {
+    pub fn account_for<'a>(&'a self, device: &'a RefreshDevice) -> &'a str {
+        self.account_email.as_deref().unwrap_or(&device.account)
+    }
 }
 
 // to support autorefreshing of apps we need to store a modified copy of the app first

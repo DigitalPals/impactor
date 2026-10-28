@@ -167,9 +167,10 @@ impl RefreshDaemon {
             .show()
             .ok();
 
+        let account_email = app.account_for(refresh_device);
         let account = store
-            .get_account(&refresh_device.account)
-            .ok_or_else(|| format!("Account {} not found", refresh_device.account))?;
+            .get_account(account_email)
+            .ok_or_else(|| format!("Refresh account {account_email} not found"))?;
 
         let session = DeveloperSession::new(
             account.adsid().clone(),
@@ -188,11 +189,26 @@ impl RefreshDaemon {
             return Err("No teams available for this account".to_string());
         }
 
-        let team_id = if account.team_id().is_empty() {
-            &teams_response.teams[0].team_id
+        let saved_team = app
+            .team_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(account.team_id());
+        let refresh_team = if saved_team.is_empty() {
+            teams_response.teams[0].team_id.clone()
         } else {
-            account.team_id()
+            if !teams_response
+                .teams
+                .iter()
+                .any(|team| team.team_id == saved_team)
+            {
+                return Err(format!(
+                    "Provisioning refresh requires the original Apple team {saved_team}, which is unavailable for this account"
+                ));
+            }
+            saved_team.to_owned()
         };
+        let team_id = &refresh_team;
 
         let identity_is_new = {
             let mut on_certificate_reset = crate::certificate_reset::confirm;

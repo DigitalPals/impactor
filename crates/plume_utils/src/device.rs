@@ -47,6 +47,56 @@ pub struct Device {
 }
 
 impl Device {
+    /// Read real target information independently of the catalog. Called on an async worker.
+    pub async fn source_device_info(&self) -> Result<(String, String, u64), Error> {
+        if let Some(device) = &self.usbmuxd_device {
+            let mut lockdown = LockdownClient::connect(&device.to_provider(
+                UsbmuxdAddr::from_env_var().unwrap_or_default(),
+                CONNECTION_LABEL,
+            ))
+            .await?;
+            let values = lockdown.get_value(None, None).await?;
+            let version = get_dict_string!(values, "ProductVersion");
+            let product = get_dict_string!(values, "ProductType");
+            if version.is_empty() || product.is_empty() {
+                return Err(Error::Other(
+                    "Device did not report its OS version/product type".into(),
+                ));
+            }
+            let (platform, family) = if product.starts_with("iPad") {
+                ("ios", 2)
+            } else if product.starts_with("iPhone") || product.starts_with("iPod") {
+                ("ios", 1)
+            } else if product.starts_with("AppleTV") {
+                ("tvos", 3)
+            } else if product.starts_with("Watch") {
+                ("watchos", 4)
+            } else {
+                return Err(Error::Other(format!(
+                    "Unsupported device platform: {product}"
+                )));
+            };
+            return Ok((version, platform.into(), family));
+        }
+        #[cfg(target_os = "macos")]
+        if self.is_mac {
+            // iOS apps on Apple Silicon use the iOSSupport runtime, not the macOS version.
+            let value = plist::Value::from_file(
+                "/System/Library/iOSSupport/System/Library/CoreServices/SystemVersion.plist",
+            )?;
+            if let Some(version) = value
+                .as_dictionary()
+                .and_then(|d| d.get("ProductVersion"))
+                .and_then(plist::Value::as_string)
+            {
+                return Ok((version.into(), "ios".into(), 2));
+            }
+        }
+        Err(Error::Other(
+            "Cannot determine this device's application runtime/OS compatibility".into(),
+        ))
+    }
+
     pub async fn new(usbmuxd_device: UsbmuxdDevice) -> Self {
         let name = Self::get_name_from_usbmuxd_device(&usbmuxd_device)
             .await
@@ -119,6 +169,23 @@ impl Device {
         let apps = ic.get_apps(Some("User"), None).await?;
 
         Ok(apps.contains_key(bundle_id))
+    }
+
+    pub async fn source_installed_ids(&self) -> Result<Vec<String>, Error> {
+        let device = self
+            .usbmuxd_device
+            .as_ref()
+            .ok_or_else(|| Error::Other("No USB device".into()))?;
+        let provider = device.to_provider(
+            UsbmuxdAddr::from_env_var().unwrap_or_default(),
+            INSTALLATION_LABEL,
+        );
+        let mut client = InstallationProxyClient::connect(&provider).await?;
+        Ok(client
+            .get_apps(Some("User"), None)
+            .await?
+            .into_keys()
+            .collect())
     }
 
     pub async fn install_profile(&self, profile: &MobileProvision) -> Result<(), Error> {

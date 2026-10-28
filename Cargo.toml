@@ -9,6 +9,7 @@ members = [
     "crates/plume_gestalt", 
     "crates/plume_store",
     "crates/plume_utils",
+    "crates/plume_source",
 ]
 default-members = ["apps/plumeimpactor"]
 
