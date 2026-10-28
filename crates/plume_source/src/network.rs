@@ -69,7 +69,6 @@ impl SourceClient {
         match source_input(input)? {
             SourceInput::Canonical(u) => Ok(u),
             SourceInput::Github { owner, repo, tail } => {
-                let _permit = tokio::select! { _=cancel.cancelled()=>return Err(Error::new("Source fetch","Cancelled")),p=self.permits.acquire()=>p.map_err(|e|Error::new("Source fetch",e))? };
                 let mut matches = vec![];
                 for split in 1..tail.len() {
                     let reference = tail[..split].join("/");

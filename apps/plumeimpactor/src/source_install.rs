@@ -1,7 +1,6 @@
 //! The only bridge between public catalogs and the established Apple-account installer.
 use plume_source::{
-    CancellationToken, DeviceProfile, DownloadProgress, InstallRecord, InstallStore, Release,
-    SourceClient, account_key, installs_path,
+    DeviceProfile, InstallRecord, InstallStore, Release, account_key, installs_path,
 };
 use plume_store::GsaAccount;
 use plume_utils::{Device, Package, SignerInstallMode, SignerMode, SignerOptions};
@@ -21,41 +20,6 @@ pub struct SourceInstall {
 }
 
 impl SourceInstall {
-    /// Download and validate against the captured target, then hand off a private
-    /// Package stage to the existing installer. The network original is never signed.
-    pub async fn download_package(
-        mut self,
-        client: &SourceClient,
-        directory: &std::path::Path,
-        cancel: &CancellationToken,
-        progress: &DownloadProgress,
-    ) -> Result<(Package, Self), String> {
-        let artifact = client
-            .download(
-                &self.release,
-                &self.original_bundle_id,
-                &self.profile,
-                directory,
-                cancel,
-                progress,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        self.artifact_sha256 = artifact.sha256.clone();
-        let cancel = cancel.clone();
-        tokio::task::spawn_blocking(move || {
-            let package = Package::new_without_artwork(artifact.path().to_owned())
-                .map_err(|e| format!("IPA staging: {e}"))?;
-            if cancel.is_cancelled() {
-                package.remove_package_stage();
-                return Err("Download cancelled".into());
-            }
-            Ok((package, self))
-        })
-        .await
-        .map_err(|e| e.to_string())?
-    }
-
     pub fn scope_check(
         &self,
         device: Option<&Device>,
@@ -316,83 +280,6 @@ mod tests {
         assert_eq!(options.mode, SignerMode::Pem);
         std::fs::write(package.package_file(), b"simulate signing staging bytes").unwrap();
         assert!(std::fs::read(original).unwrap().starts_with(b"PK"));
-        package.remove_package_stage();
-    }
-    #[tokio::test]
-    async fn redirected_download_hands_the_captured_target_to_the_existing_installer() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let (original, initial_stage) = package();
-        let bytes = std::fs::read(original.path().join("original.ipa")).unwrap();
-        initial_stage.remove_package_stage();
-        let expected_bytes = bytes.clone();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move {
-            let mut requests = vec![];
-            for redirect in [true, false] {
-                let (mut socket, _) = listener.accept().await.unwrap();
-                let mut request = vec![];
-                let mut buffer = [0; 4096];
-                while !request.windows(4).any(|v| v == b"\r\n\r\n") {
-                    let count = socket.read(&mut buffer).await.unwrap();
-                    assert!(count > 0 && request.len() + count <= 8192);
-                    request.extend_from_slice(&buffer[..count]);
-                }
-                requests.push(String::from_utf8(request).unwrap());
-                if redirect {
-                    socket.write_all(b"HTTP/1.1 302 Found\r\nLocation: /artifact?signature=a%20b\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
-                } else {
-                    let headers = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        bytes.len()
-                    );
-                    socket.write_all(headers.as_bytes()).await.unwrap();
-                    socket.write_all(&bytes).await.unwrap();
-                }
-                socket.shutdown().await.unwrap();
-            }
-            requests
-        });
-        let mut context = context();
-        context.release.download_url =
-            plume_source::Url::parse(&format!("http://{address}/start")).unwrap();
-        context.release.size = Some(expected_bytes.len() as u64);
-        let expected_scope = context.account_key.clone();
-        let downloads = tempfile::tempdir().unwrap();
-        let client = SourceClient::new().unwrap();
-        let cancel = CancellationToken::new();
-        let progress = DownloadProgress::default();
-        let (package, handoff) = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            context.download_package(&client, downloads.path(), &cancel, &progress),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        assert_eq!(
-            std::fs::read(package.package_file()).unwrap(),
-            expected_bytes
-        );
-        assert_eq!(std::fs::read_dir(downloads.path()).unwrap().count(), 0);
-        assert_eq!(package.get_bundle_identifier().as_deref(), Some("test.app"));
-        assert_eq!(handoff.target_udid, device().udid);
-        assert_eq!(handoff.account_key, expected_scope);
-        assert_eq!(handoff.artifact_sha256.len(), 64);
-        assert!(
-            handoff
-                .scope_check(Some(&device()), Some(&account()))
-                .is_ok()
-        );
-        assert_eq!(handoff.options(&package).unwrap().mode, SignerMode::Pem);
-        assert!(!downloads.path().join("source-installs.json").exists());
-        let requests = server.await.unwrap();
-        assert!(requests[1].starts_with("GET /artifact?signature=a%20b "));
-        for request in requests {
-            let request = request.to_ascii_lowercase();
-            assert!(!request.contains("authorization:") && !request.contains("cookie:"));
-            assert!(!request.contains("secret-never-sent"));
-        }
         package.remove_package_stage();
     }
     #[test]

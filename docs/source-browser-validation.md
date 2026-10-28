@@ -13,8 +13,8 @@ physical devices were used.
   upstream modules. `git diff --check` passed.
 * `cargo check --workspace` passed.
 * `cargo test --locked -p plume_source -p plume_store -p plumeimpactor` passed:
-  27 source tests, one older-store/refresh ownership test, and eight GUI state /
-  installer bridge tests, **36 total**.
+  26 source tests, one older-store/refresh ownership test, and seven GUI state /
+  installer bridge tests, **34 total**.
 * `cargo build --locked --bins --workspace` passed for the Linux GUI and CLI.
 * `cargo clippy --locked --workspace --all-targets` passed with warnings in the
   existing workspace and integration code. No warnings are emitted for the new
@@ -27,16 +27,15 @@ resources. Tests use sanitized JSON fixtures and local mock HTTP responses;
 generated IPAs contain only tiny test Info.plists and synthetic payload bytes.
 
 Coverage includes exact blob/raw canonicalization and tracking queries, ambiguous
-refs, meaningful/signed URL query bytes, JSON/JSON5, legacy fallback, malformed
-neighbors, identifier/bundle collisions, release ordering and compatibility,
-false updates, conditional 304s, redirects, HTTP/HTML errors, timeouts,
-cancellation before and during a body, partial-file cleanup/retry, corrupt ZIPs,
-traversal/path aliases, size/checksum and metadata mismatches, restart persistence,
-stale completions, post-install device reconciliation, no account credentials in
-requests, redirected HTTP downloads through the real installer bridge,
-account/device/team scope, restoring signed identity/options, failed-install
-provenance, and a newer mocked catalog that leaves the installed artifact/release
-unchanged.
+refs, meaningful URL queries, JSON/JSON5, legacy fallback, malformed neighbors,
+identifier/bundle collisions, release ordering and compatibility, false updates,
+conditional 304s, redirects, HTTP/HTML errors, timeouts, cancellation before and
+during a body, partial-file cleanup/retry, corrupt ZIPs, traversal, size/checksum
+and metadata mismatches, restart persistence, stale completions, post-install
+device reconciliation, no account
+credentials in requests, installer staging, account/device/team scope, restoring
+signed identity/options, failed-install provenance, and a newer mocked catalog
+that leaves the installed artifact/release unchanged.
 
 ## Linux GUI smoke test
 
@@ -64,12 +63,9 @@ versions and artifact URLs are not built into the feature or its tests.
 
 ## Remaining validation
 
-The fork-only [checks run for `03a5165`](https://github.com/DigitalPals/impactor/actions/runs/40749020507)
-passed native Linux and Windows workspace checks and all 34 tests present at
-that commit. The macOS job never acquired a hosted runner and was cancelled
-because GitHub reported ARM runner capacity constraints; it was retried, but no
-macOS pass is claimed. The follow-up local checks above include two additional
-regression tests. The existing release workflow's platform matrix was inspected;
+The new fork-only checks workflow defines Linux, native Windows, and native
+macOS workspace checks/tests. Those non-Linux jobs were not run in this local
+environment. The existing release workflow's platform matrix was inspected;
 no release was published and no upstream PR was created.
 
 On-device validation still requires an Apple account and trusted device: real

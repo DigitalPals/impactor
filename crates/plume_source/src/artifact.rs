@@ -199,16 +199,13 @@ pub fn inspect_ipa(path: &Path, cancel: &CancellationToken) -> Result<IpaMetadat
             .by_index(i)
             .map_err(|e| Error::new("IPA validation", e))?;
         let name = entry.name().to_owned();
-        // One trailing separator denotes a directory. Repeated/interior empty
-        // components alias paths during extraction (e.g. App.app//Info.plist).
-        let path = name.strip_suffix('/').unwrap_or(&name);
         if entry.enclosed_name().is_none()
             || name.contains('\\')
-            || path
+            || name
                 .split('/')
-                .any(|p| p.is_empty() || p == ".." || p == "." || p.contains(':') || p.ends_with(['.',' ']))
+                .any(|p| p == ".." || p == "." || p.contains(':') || p.ends_with(['.',' ']))
             // Preserve the validated identity on case-insensitive Windows/macOS filesystems.
-            || !names.insert(path.to_lowercase())
+            || !names.insert(name.to_lowercase())
             || entry.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000)
         {
             return Err(Error::new(
