@@ -45,6 +45,13 @@ fn preserves_meaningful_query_parameters_and_rejects_credentials_and_schemes() {
     assert!(
         matches!(source_input(&raw).unwrap(),SourceInput::Canonical(u) if u.query()==Some("token=signed%2Bvalue"))
     );
+    let signed = "token=a%20b&signature=%2f%2B&flag&token=second";
+    for query in [signed.to_owned(), format!("{signed}&utm_source=tracker")] {
+        let SourceInput::Canonical(url) = source_input(&format!("{RAW}?{query}")).unwrap() else {
+            panic!()
+        };
+        assert_eq!(url.query(), Some(signed));
+    }
     for url in [
         "file:///etc/passwd",
         "javascript:alert(1)",

@@ -443,6 +443,46 @@ fn rejects_traversal_and_crc_corruption_before_extracting() {
             .contains("Corrupt")
     );
 }
+#[test]
+fn rejects_archive_path_aliases_that_could_replace_the_validated_plist() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fixture.ipa");
+    for alias in [
+        "Payload/Example.app//Info.plist",
+        "Payload/Example.app/Info.plist/",
+        "Payload/Example.app/info.plist",
+    ] {
+        let mut zip =
+            zip::ZipWriter::new_append(Cursor::new(ipa_with("test.app", "iPhoneOS", "16")))
+                .unwrap();
+        zip.start_file(alias, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"a different Info.plist must never replace the validated one")
+            .unwrap();
+        std::fs::write(&path, zip.finish().unwrap().into_inner()).unwrap();
+        let error = inspect_ipa(&path, &CancellationToken::new()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Unsafe or duplicate archive path")
+        );
+    }
+    // Ordinary explicit directory entries remain supported.
+    let mut zip =
+        zip::ZipWriter::new_append(Cursor::new(ipa_with("test.app", "iPhoneOS", "16"))).unwrap();
+    zip.add_directory(
+        "Payload/Example.app/",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    std::fs::write(&path, zip.finish().unwrap().into_inner()).unwrap();
+    assert_eq!(
+        inspect_ipa(&path, &CancellationToken::new())
+            .unwrap()
+            .bundle_id,
+        "test.app"
+    );
+}
 #[tokio::test]
 async fn bounded_redirects_fail_instead_of_looping() {
     let mock = Mock::new(vec![Response::status(302).header("Location", "/loop"); 10]).await;

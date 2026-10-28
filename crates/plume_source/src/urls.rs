@@ -75,16 +75,21 @@ pub fn source_input(value: &str) -> Result<SourceInput> {
     }
     if url.host_str() == Some("raw.githubusercontent.com") {
         // Only GitHub source URLs have known presentation/tracking query parameters.
-        let pairs: Vec<_> = url
-            .query_pairs()
-            .filter(|(k, _)| {
-                !k.starts_with("utm_") && !matches!(k.as_ref(), "raw" | "fbclid" | "gclid")
-            })
-            .map(|(k, v)| (k.into_owned(), v.into_owned()))
-            .collect();
-        url.set_query(None);
-        if !pairs.is_empty() {
-            url.query_pairs_mut().extend_pairs(pairs);
+        // Keep each surviving pair byte-for-byte: decoding/re-encoding can invalidate
+        // signed queries even when their decoded values are unchanged.
+        if let Some(query) = url.query() {
+            let pairs: Vec<_> = query
+                .split('&')
+                .filter(|pair| {
+                    let key = pair.split('=').next().unwrap_or("");
+                    let key = percent_decode_str(key).decode_utf8_lossy();
+                    !key.starts_with("utm_") && !matches!(key.as_ref(), "raw" | "fbclid" | "gclid")
+                })
+                .collect();
+            let filtered = pairs.join("&");
+            if filtered != query {
+                url.set_query((!filtered.is_empty()).then_some(filtered.as_str()));
+            }
         }
     }
     Ok(SourceInput::Canonical(url))

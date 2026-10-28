@@ -126,7 +126,8 @@ Source identity is a hash of the canonical URL, never the feed's `identifier` or
 bundle IDs within one feed are diagnosed and ignored after the first app.
 Equivalent simple GitHub blob/raw addresses deduplicate. GitHub presentation and
 tracking parameters are removed during conversion; arbitrary source queries and
-signed download queries are preserved. Ambiguous slash-containing GitHub ref/path
+signed download queries are preserved. Retained raw-feed query pairs keep their
+original encoding, including signatures. Ambiguous slash-containing GitHub ref/path
 splits are resolved through GitHub's public contents API, accepting only one
 verified file. If that is unavailable, rate limited, or ambiguous, use the Raw
 URL. Impactor never guesses a ref or silently replaces another source's identity.
@@ -138,7 +139,8 @@ HTTP(S). Redirects are bounded to eight and HTTPS downgrade redirects are
 rejected. TLS certificate verification remains enabled. Limits are 8 MiB per
 feed, 2 MiB per remote artwork, 4 GiB per download, four concurrent network
 transfers, and 8 GiB total uncompressed archive data. Unsafe paths, symlinks,
-multiple main apps, and corrupt ZIP entries are rejected before extraction.
+multiple main apps, duplicate/aliased extraction paths, and corrupt ZIP entries
+are rejected before extraction.
 
 ## Storage and recovery
 

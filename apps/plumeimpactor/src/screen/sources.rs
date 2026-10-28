@@ -703,35 +703,15 @@ impl SourcesScreen {
         self.retry_download = false;
         Task::perform(
             async move {
-                async {
-                    let artifact = client
-                        .download(
-                            &release,
-                            &context.original_bundle_id,
-                            &profile,
-                            &defaults::get_data_path().join("source-downloads"),
-                            &cancel,
-                            &progress,
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    let mut context = context;
-                    context.artifact_sha256 = artifact.sha256.clone();
-                    tokio::task::spawn_blocking(move || {
-                        let package = Package::new_without_artwork(artifact.path().to_owned())
-                            .map_err(|e| format!("IPA staging: {e}"))?;
-                        if cancel.is_cancelled() {
-                            package.remove_package_stage();
-                            return Err("Download cancelled".into());
-                        }
-                        // Package::new copied the immutable original; signing uses only that private stage.
-                        Ok((package, context))
-                    })
+                context
+                    .download_package(
+                        &client,
+                        &defaults::get_data_path().join("source-downloads"),
+                        &cancel,
+                        &progress,
+                    )
                     .await
-                    .map_err(|e| e.to_string())?
-                }
-                .await
-                .map_err(|error: String| format!("{description}: {error}"))
+                    .map_err(|error| format!("{description}: {error}"))
             },
             move |r| Message::DownloadDone(id, r),
         )
